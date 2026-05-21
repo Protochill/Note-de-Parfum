@@ -1,6 +1,6 @@
 import { createRouter } from "./router.js";
 import { renderLayout } from "./layout.js";
-import { refreshAuthState, bootstrapAppData } from "./state.js";
+import { getState, refreshAuthState, bootstrapAppData } from "./state.js";
 
 import { renderHomePage } from "./pages/home-page.js";
 import { renderAuthPage } from "./pages/auth-page.js";
@@ -15,16 +15,16 @@ import { renderNotFoundPage } from "./pages/not-found-page.js";
 
 const routes = [
   { path: "/", page: renderHomePage },
-  { path: "/auth/login", page: renderAuthPage },
-  { path: "/auth/register", page: renderAuthPage },
-  { path: "/auth/forgot-password", page: renderAuthPage },
+  { path: "/auth/login", page: renderAuthPage, guestOnly: true },
+  { path: "/auth/register", page: renderAuthPage, guestOnly: true },
+  { path: "/auth/forgot-password", page: renderAuthPage, guestOnly: true },
   { path: "/catalog", page: renderCatalogPage },
   { path: "/catalog/:id", page: renderPerfumePage },
   { path: "/brands", page: renderBrandsPage },
-  { path: "/profile", page: renderProfilePage },
-  { path: "/favorites", page: renderFavoritesPage },
-  { path: "/cart", page: renderCartPage },
-  { path: "/admin", page: renderAdminPage },
+  { path: "/profile", page: renderProfilePage, authRequired: true },
+  { path: "/favorites", page: renderFavoritesPage, authRequired: true },
+  { path: "/cart", page: renderCartPage, authRequired: true },
+  { path: "/admin", page: renderAdminPage, authRequired: true },
   { path: "*", page: renderNotFoundPage }
 ];
 
@@ -56,7 +56,7 @@ function createTransitionScreen() {
 
   let navigationToken = 0;
 
-  createRouter(routes, async ({ page, params, query, path, go }) => {
+  createRouter(routes, async ({ route, page, params, query, path, go }) => {
     const currentToken = ++navigationToken;
     const root = document.getElementById("app");
     const loader = createTransitionScreen();
@@ -65,6 +65,17 @@ function createTransitionScreen() {
     const delay = Math.floor(Math.random() * 751);
     await wait(delay);
     if (currentToken !== navigationToken) return;
+
+    const state = getState();
+    if (route?.guestOnly && state.currentUser) {
+      go("/profile");
+      return;
+    }
+
+    if (route?.authRequired && !state.currentUser) {
+      go("/auth/login");
+      return;
+    }
 
     const content = page?.({ params, query, go, path }) || renderNotFoundPage({ path, go });
     if (currentToken !== navigationToken) return;
