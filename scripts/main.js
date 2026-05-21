@@ -28,6 +28,24 @@ const routes = [
   { path: "*", page: renderNotFoundPage }
 ];
 
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function createTransitionScreen() {
+  const loader = document.createElement("div");
+  loader.className = "route-loader";
+  loader.innerHTML = `
+    <div class="route-loader__panel">
+      <div class="route-loader__spinner" aria-hidden="true"></div>
+      <div class="route-loader__text">Загружаем страницу...</div>
+    </div>
+  `;
+  return loader;
+}
+
 (async () => {
   await refreshAuthState();
   try {
@@ -36,8 +54,20 @@ const routes = [
     // catalog page will show fetch error state
   }
 
-  createRouter(routes, ({ page, params, query, path, go }) => {
+  let navigationToken = 0;
+
+  createRouter(routes, async ({ page, params, query, path, go }) => {
+    const currentToken = ++navigationToken;
+    const root = document.getElementById("app");
+    const loader = createTransitionScreen();
+    root.replaceChildren(loader);
+
+    const delay = Math.floor(Math.random() * 751);
+    await wait(delay);
+    if (currentToken !== navigationToken) return;
+
     const content = page?.({ params, query, go, path }) || renderNotFoundPage({ path, go });
+    if (currentToken !== navigationToken) return;
     renderLayout({ path, content });
   });
 })();
