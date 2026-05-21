@@ -25,7 +25,6 @@ export function renderCartPage({ go }) {
           el("button", { class: "button button--primary", onclick: () => go("/catalog") }, "Перейти в каталог")
         ])
       );
-      status.textContent = "";
       return;
     }
 
@@ -69,16 +68,16 @@ export function renderCartPage({ go }) {
           class: "button button--secondary",
           onclick: () => {
             clearCart();
-            status.textContent = "Корзина очищена.";
             render();
+            status.textContent = "Корзина очищена.";
           }
         }, "Очистить корзину"),
         el("button", {
           class: "button button--primary",
           onclick: () => {
             clearCart();
-            status.textContent = "Заказ оформлен. Спасибо за покупку.";
             render();
+            status.textContent = "Заказ оформлен.";
           }
         }, "Оформить заказ")
       ]),

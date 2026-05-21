@@ -32,11 +32,13 @@ export function createRouter(routes, render) {
       const params = matchPath(route.path, pathname);
       if (!params) continue;
       render({ page: route.page, params, query, path: pathname, go });
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
       return;
     }
 
     const notFound = routes.find((r) => r.path === "*");
     render({ page: notFound?.page, params: {}, query, path: pathname, go });
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   };
 
   window.addEventListener("hashchange", resolve);
