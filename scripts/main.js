@@ -9,6 +9,7 @@ import { renderPerfumePage } from "./pages/perfume-page.js";
 import { renderBrandsPage } from "./pages/brands-page.js";
 import { renderProfilePage } from "./pages/profile-page.js";
 import { renderFavoritesPage } from "./pages/favorites-page.js";
+import { renderCartPage } from "./pages/cart-page.js";
 import { renderAdminPage } from "./pages/admin-page.js";
 import { renderNotFoundPage } from "./pages/not-found-page.js";
 
@@ -22,6 +23,7 @@ const routes = [
   { path: "/brands", page: renderBrandsPage },
   { path: "/profile", page: renderProfilePage },
   { path: "/favorites", page: renderFavoritesPage },
+  { path: "/cart", page: renderCartPage },
   { path: "/admin", page: renderAdminPage },
   { path: "*", page: renderNotFoundPage }
 ];

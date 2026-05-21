@@ -1,6 +1,7 @@
-import { el, stars } from "../dom.js";
-import { getPerfumeById, listReviews, toggleFavorite, getState, addReview, refreshReviews, refreshPerfumes } from "../state.js";
+﻿import { el, stars } from "../dom.js";
+import { getPerfumeById, listReviews, toggleFavorite, getState, addReview, refreshReviews, refreshPerfumes, addToCart } from "../state.js";
 import { createPerfumeMedia, createPerfumeDetailMedia } from "../ui/perfume-media.js";
+import { refreshHeaderCounters } from "../layout.js";
 
 function renderReviewsList(items) {
   if (!items.length) return el("p", { class: "muted" }, "Пока нет отзывов.");
@@ -71,7 +72,7 @@ export function renderPerfumePage({ params, go }) {
           try {
             await toggleFavorite(perfume.id);
             favButton.textContent = state.favorites.has(perfume.id) ? "Убрать из избранного" : "В избранное";
-            window.dispatchEvent(new Event("hashchange"));
+            refreshHeaderCounters();
           } catch (_error) {
             status.textContent = "Не удалось обновить избранное.";
           }
@@ -89,8 +90,15 @@ export function renderPerfumePage({ params, go }) {
             el("p", { class: "muted" }, `${perfume.volumeMl || 100} мл • ${perfume.priceByn || 0} BYN`),
             el("p", {}, perfume.description),
             el("p", { class: "muted" }, `Рейтинг: ${stars(perfume.rating)}`),
-            el("div", { class: "row" }, [
+            el("div", { class: "actions-row" }, [
               favButton,
+              !isGuest ? el("button", {
+                class: "button button--secondary",
+                onclick: () => {
+                  addToCart(perfume.id);
+                  refreshHeaderCounters();
+                }
+              }, "В корзину") : null,
               el("button", { class: "button button--primary", onclick: () => go("/catalog") }, "К каталогу")
             ])
           ])

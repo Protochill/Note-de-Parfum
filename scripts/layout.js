@@ -1,5 +1,13 @@
-import { el } from "./dom.js";
-import { getState, logoutUser } from "./state.js";
+﻿import { el } from "./dom.js";
+import { getState, logoutUser, getCartCount } from "./state.js";
+
+export function refreshHeaderCounters() {
+  const state = getState();
+  const favoritesLink = document.getElementById("nav-favorites");
+  if (favoritesLink) favoritesLink.textContent = `Избранное (${state.favorites.size})`;
+  const cartLink = document.getElementById("nav-cart");
+  if (cartLink) cartLink.textContent = `Корзина (${getCartCount()})`;
+}
 
 export function renderLayout({ path, content }) {
   const root = document.getElementById("app");
@@ -13,6 +21,7 @@ export function renderLayout({ path, content }) {
     ["/brands", "Бренды"],
     ["/profile", "Профиль"]
   ];
+  if (!isGuest) navItems.push(["/cart", `Корзина (${getCartCount()})`]);
   if (!isGuest) navItems.push(["/favorites", `Избранное (${state.favorites.size})`]);
   if (isAdmin) navItems.push(["/admin", "Админ"]);
 
@@ -20,7 +29,11 @@ export function renderLayout({ path, content }) {
     el("div", { class: "header__inner" }, [
       el("a", { class: "logo", href: "#/" }, "Note de Parfum"),
       el("nav", { class: "nav" }, navItems.map(([href, label]) =>
-        el("a", { class: `nav__link ${path === href ? "active" : ""}`.trim(), href: `#${href}` }, label)
+        el("a", {
+          class: `nav__link ${href === "/cart" ? "nav__link--cart" : ""} ${path === href ? "active" : ""}`.trim(),
+          href: `#${href}`,
+          id: href === "/favorites" ? "nav-favorites" : href === "/cart" ? "nav-cart" : null
+        }, label)
       )),
       el("div", { class: "header__actions" }, [
         el("span", { class: "header__status" }, state.currentUser ? `Вход: ${state.currentUser.login}` : "Гость"),

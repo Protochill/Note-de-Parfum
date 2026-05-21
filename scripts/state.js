@@ -335,6 +335,7 @@ const users = [
 const state = {
   currentUser: null,
   favorites: new Set(),
+  cart: new Map(),
   perfumes: [],
   reviews: [],
   users: [],
@@ -345,6 +346,27 @@ const state = {
 
 export function getState() {
   return state;
+}
+
+function saveCart() {
+  const serialized = JSON.stringify([...state.cart.entries()]);
+  localStorage.setItem("note-de-parfum-cart", serialized);
+}
+
+function loadCart() {
+  try {
+    const raw = localStorage.getItem("note-de-parfum-cart");
+    if (!raw) return;
+    const entries = JSON.parse(raw);
+    if (!Array.isArray(entries)) return;
+    state.cart = new Map(
+      entries
+        .map(([id, qty]) => [Number(id), Number(qty)])
+        .filter(([id, qty]) => Number.isInteger(id) && id > 0 && Number.isInteger(qty) && qty > 0)
+    );
+  } catch (_error) {
+    state.cart = new Map();
+  }
 }
 
 export async function apiRequest(url, options = {}) {
@@ -500,6 +522,54 @@ export function listFavoritePerfumes() {
   return state.perfumes.filter((p) => state.favorites.has(p.id));
 }
 
+export function addToCart(perfumeId, quantity = 1) {
+  const id = Number(perfumeId);
+  const qty = Number(quantity);
+  if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(qty) || qty <= 0) return;
+  const currentQty = state.cart.get(id) || 0;
+  state.cart.set(id, currentQty + qty);
+  saveCart();
+}
+
+export function updateCartItem(perfumeId, quantity) {
+  const id = Number(perfumeId);
+  const qty = Number(quantity);
+  if (!Number.isInteger(id) || id <= 0) return;
+  if (!Number.isInteger(qty) || qty <= 0) {
+    state.cart.delete(id);
+  } else {
+    state.cart.set(id, qty);
+  }
+  saveCart();
+}
+
+export function removeFromCart(perfumeId) {
+  updateCartItem(perfumeId, 0);
+}
+
+export function clearCart() {
+  state.cart.clear();
+  saveCart();
+}
+
+export function listCartItems() {
+  return [...state.cart.entries()]
+    .map(([id, quantity]) => {
+      const perfume = getPerfumeById(id);
+      if (!perfume) return null;
+      return { perfume, quantity, subtotal: (perfume.priceByn || 0) * quantity };
+    })
+    .filter(Boolean);
+}
+
+export function getCartCount() {
+  return [...state.cart.values()].reduce((sum, qty) => sum + qty, 0);
+}
+
+export function getCartTotal() {
+  return listCartItems().reduce((sum, item) => sum + item.subtotal, 0);
+}
+
 export async function refreshPerfumes(filters = {}) {
   state.isLoadingPerfumes = true;
   state.lastError = "";
@@ -540,5 +610,6 @@ export async function refreshReviews(perfumeId) {
 }
 
 export async function bootstrapAppData() {
+  loadCart();
   await refreshPerfumes({ sort: "popular" });
 }
