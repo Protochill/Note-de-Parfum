@@ -15,35 +15,40 @@ export function renderProfilePage() {
   const nameInput = el("input", { class: "input", value: currentUser.name || currentUser.login || "", readonly: "readonly" });
   const emailInput = el("input", { class: "input", value: currentUser.email || "", readonly: "readonly" });
   const phoneInput = el("input", { class: "input", value: currentUser.phone || "", readonly: "readonly" });
-  const keywordInput = el("input", { class: "input", placeholder: "Ключевое слово для восстановления" });
+  const questionInput = el("input", { class: "input", placeholder: "Вопрос для восстановления пароля" });
+  const answerInput = el("input", { class: "input", placeholder: "Новый ответ на вопрос" });
   const status = el("p", { class: "muted form-status-top" }, "");
 
   const loadProfile = async () => {
     try {
       const data = await apiRequest("/api/auth/profile");
-      keywordInput.value = data.user.recoveryKeyword || "";
+      questionInput.value = data.user.recoveryQuestion || "";
     } catch (_error) {
-      status.textContent = "Не удалось загрузить ключевое слово.";
+      status.textContent = "Не удалось загрузить вопрос восстановления.";
     }
   };
 
-  const saveKeyword = async () => {
-    const recoveryKeyword = keywordInput.value.trim();
-    if (!recoveryKeyword) {
-      status.textContent = "Введите ключевое слово.";
+  const saveRecovery = async () => {
+    const recoveryQuestion = questionInput.value.trim();
+    const recoveryAnswer = answerInput.value.trim();
+    if (!recoveryQuestion) {
+      status.textContent = "Введите вопрос восстановления.";
       return;
     }
 
     try {
       await apiRequest("/api/auth/profile", {
         method: "PATCH",
-        body: { recoveryKeyword }
+        body: { recoveryQuestion, recoveryAnswer }
       });
-      status.textContent = "Ключевое слово обновлено.";
+      answerInput.value = "";
+      status.textContent = recoveryAnswer
+        ? "Вопрос и ответ восстановления обновлены."
+        : "Вопрос восстановления обновлен.";
     } catch (error) {
-      status.textContent = error.message === "recovery_keyword_required"
-        ? "Ключевое слово обязательно."
-        : "Не удалось обновить ключевое слово.";
+      status.textContent = error.message === "recovery_question_required"
+        ? "Вопрос восстановления обязателен."
+        : "Не удалось обновить данные восстановления.";
     }
   };
 
@@ -59,9 +64,11 @@ export function renderProfilePage() {
       emailInput,
       el("label", {}, "Телефон"),
       phoneInput,
-      el("label", {}, "Ключевое слово"),
-      keywordInput,
-      el("button", { class: "button button--primary", onclick: saveKeyword }, "Обновить ключевое слово"),
+      el("label", {}, "Вопрос восстановления"),
+      questionInput,
+      el("label", {}, "Ответ восстановления"),
+      answerInput,
+      el("button", { class: "button button--primary", onclick: saveRecovery }, "Обновить восстановление"),
       el("button", {
         class: "button button--secondary",
         onclick: async () => {
