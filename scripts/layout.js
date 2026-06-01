@@ -67,7 +67,15 @@ export function renderLayout({ path, content }) {
   const footer = el("footer", { class: "footer" }, [
     el("div", { class: "container" }, [
       el("strong", {}, "Note de Parfum"),
-      el("p", { class: "muted footer__contacts" }, "г. Брест, ул. Парфюмерная, д. 1 • +375 (29) 111-11-11 • support@noteparfum.by")
+      el("p", { class: "muted footer__contacts" }, [
+        "г. Брест, ул. Парфюмерная, д. 1 • +375 (29) 111-11-11 • support@noteparfum.by • ",
+        el("a", {
+          class: "footer__link",
+          href: "https://github.com/Protochill/Note-de-Parfum",
+          target: "_blank",
+          rel: "noreferrer"
+        }, "GitHub")
+      ])
     ])
   ]);
 
