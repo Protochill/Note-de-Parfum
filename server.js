@@ -3,6 +3,7 @@ const mysql = require("mysql2/promise");
 const bcrypt = require("bcrypt");
 const session = require("express-session");
 const path = require("path");
+const fs = require("fs/promises");
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -13,6 +14,7 @@ const ADMIN_PASSWORD = "111111";
 const ADMIN_PHONE = "+375291111111";
 const ADMIN_ROLE = "admin";
 const ADMIN_RECOVERY_KEYWORD = "admin-keyword";
+const ADMIN_RECOVERY_QUESTION = "Какой код администратора?";
 
 const seedPerfumes = [
   {
@@ -263,8 +265,8 @@ const seedReviews = [
   { perfumeId: 14, userLogin: "anna", rating: 4, text: "Идеально на каждый день.", createdAt: "2026-04-01" }
 ];
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "12mb" }));
+app.use(express.urlencoded({ extended: true, limit: "12mb" }));
 app.use(express.static(path.join(__dirname)));
 
 app.get("/", (_req, res) => {
@@ -335,6 +337,11 @@ function normalizePerfumeRow(row) {
     return [];
   };
 
+  const imageData = row.image_data
+    ? Buffer.from(row.image_data).toString("base64")
+    : "";
+  const imageMime = row.image_mime || "image/png";
+
   return {
     id: row.id,
     name: row.name,
@@ -347,10 +354,21 @@ function normalizePerfumeRow(row) {
     baseNotes: parseJson(row.base_notes),
     description: row.description || "",
     country: row.country || "Не указано",
-    imageUrl: row.image_url || "",
+    imageUrl: imageData ? `data:${imageMime};base64,${imageData}` : (row.image_url || ""),
     volumeMl: Number(row.volume_ml || 100),
     priceByn: Number(row.price_byn || 0)
   };
+}
+
+function parseImageDataUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([a-z0-9+/=\s]+)$/i);
+  if (!match) return null;
+  const mime = match[1].toLowerCase() === "image/jpg" ? "image/jpeg" : match[1].toLowerCase();
+  const buffer = Buffer.from(match[2].replace(/\s/g, ""), "base64");
+  if (!buffer.length || buffer.length > 8 * 1024 * 1024) return null;
+  return { mime, buffer };
 }
 
 function normalizeReviewRow(row) {
@@ -402,6 +420,8 @@ async function initDatabase() {
       phone VARCHAR(50) UNIQUE,
       role ENUM('user', 'admin') DEFAULT 'user',
       recovery_keyword VARCHAR(255),
+      recovery_question VARCHAR(255),
+      recovery_answer_hash VARCHAR(255),
       favorites JSON,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -422,6 +442,8 @@ async function initDatabase() {
       description TEXT,
       country VARCHAR(255),
       image_url TEXT,
+      image_data LONGBLOB,
+      image_mime VARCHAR(100),
       volume_ml INT DEFAULT 100,
       price_byn DECIMAL(10,2) DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -460,6 +482,8 @@ async function initDatabase() {
   await ensureColumn("users", "phone", "VARCHAR(50) NULL");
   await ensureColumn("users", "role", "ENUM('user','admin') DEFAULT 'user'");
   await ensureColumn("users", "recovery_keyword", "VARCHAR(255) NULL");
+  await ensureColumn("users", "recovery_question", "VARCHAR(255) NULL");
+  await ensureColumn("users", "recovery_answer_hash", "VARCHAR(255) NULL");
   await ensureColumn("users", "favorites", "JSON");
   await ensureColumn("users", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
   await ensureColumn("users", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
@@ -512,6 +536,8 @@ async function initDatabase() {
   await ensureColumn("perfumes", "description", "TEXT");
   await ensureColumn("perfumes", "country", "VARCHAR(255)");
   await ensureColumn("perfumes", "image_url", "TEXT");
+  await ensureColumn("perfumes", "image_data", "LONGBLOB");
+  await ensureColumn("perfumes", "image_mime", "VARCHAR(100)");
   await ensureColumn("perfumes", "volume_ml", "INT DEFAULT 100");
   await ensureColumn("perfumes", "price_byn", "DECIMAL(10,2) DEFAULT 0");
 
@@ -525,6 +551,7 @@ async function initDatabase() {
 
 async function ensureAdminUser() {
   const adminHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+  const adminRecoveryHash = await bcrypt.hash(ADMIN_RECOVERY_KEYWORD, 10);
   const [rows] = await db.execute(
     "SELECT id FROM users WHERE email = ? OR login = ? OR name = ? LIMIT 1",
     [ADMIN_EMAIL, ADMIN_NAME, ADMIN_NAME]
@@ -533,10 +560,10 @@ async function ensureAdminUser() {
   if (rows.length === 0) {
     await db.execute(
       `
-      INSERT INTO users (email, password_hash, name, login, password, phone, role, recovery_keyword, favorites)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, JSON_ARRAY())
+      INSERT INTO users (email, password_hash, name, login, password, phone, role, recovery_keyword, recovery_question, recovery_answer_hash, favorites)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, JSON_ARRAY())
       `,
-      [ADMIN_EMAIL, adminHash, ADMIN_NAME, ADMIN_NAME, adminHash, ADMIN_PHONE, ADMIN_ROLE, ADMIN_RECOVERY_KEYWORD]
+      [ADMIN_EMAIL, adminHash, ADMIN_NAME, ADMIN_NAME, adminHash, ADMIN_PHONE, ADMIN_ROLE, null, ADMIN_RECOVERY_QUESTION, adminRecoveryHash]
     );
     return;
   }
@@ -544,10 +571,11 @@ async function ensureAdminUser() {
   await db.execute(
     `
     UPDATE users
-    SET email = ?, password_hash = ?, name = ?, login = ?, password = ?, phone = ?, role = ?, recovery_keyword = ?
+    SET email = ?, password_hash = ?, name = ?, login = ?, password = ?, phone = ?, role = ?,
+        recovery_keyword = ?, recovery_question = ?, recovery_answer_hash = ?
     WHERE id = ?
     `,
-    [ADMIN_EMAIL, adminHash, ADMIN_NAME, ADMIN_NAME, adminHash, ADMIN_PHONE, ADMIN_ROLE, ADMIN_RECOVERY_KEYWORD, rows[0].id]
+    [ADMIN_EMAIL, adminHash, ADMIN_NAME, ADMIN_NAME, adminHash, ADMIN_PHONE, ADMIN_ROLE, null, ADMIN_RECOVERY_QUESTION, adminRecoveryHash, rows[0].id]
   );
 }
 
@@ -608,6 +636,32 @@ async function seedReviewsIfEmpty() {
   }
 }
 
+function mimeFromImagePath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  return "image/png";
+}
+
+async function backfillPerfumeImagesFromFiles() {
+  const [rows] = await db.query("SELECT id, image_url FROM perfumes WHERE image_data IS NULL AND image_url IS NOT NULL AND image_url <> ''");
+  for (const row of rows) {
+    if (!String(row.image_url).startsWith("/image/")) continue;
+    try {
+      const relativePath = decodeURIComponent(String(row.image_url).replace(/^\/+/, ""));
+      const filePath = path.join(__dirname, relativePath);
+      const buffer = await fs.readFile(filePath);
+      await db.execute(
+        "UPDATE perfumes SET image_data = ?, image_mime = ?, image_url = '' WHERE id = ?",
+        [buffer, mimeFromImagePath(filePath), row.id]
+      );
+    } catch (error) {
+      console.warn(`Не удалось перенести фото товара ${row.id} в БД: ${error.message}`);
+    }
+  }
+}
+
 app.get("/api/health", async (_req, res) => {
   try {
     await db.query("SELECT 1");
@@ -664,15 +718,22 @@ app.get("/api/perfumes", async (req, res) => {
 
 app.post("/api/perfumes", requireAdmin, async (req, res) => {
   try {
-    const { name, brand, gender, releaseYear, description, imageUrl, volumeMl, priceByn } = req.body;
+    const { name, brand, gender, releaseYear, description, imageUrl, imageDataUrl, volumeMl, priceByn, country } = req.body;
     if (!name || !brand) {
       return res.status(400).json({ success: false, message: "name_and_brand_required" });
+    }
+    const image = parseImageDataUrl(imageDataUrl);
+    if (imageDataUrl && !image) {
+      return res.status(400).json({ success: false, message: "invalid_image" });
     }
 
     const [result] = await db.execute(
       `
-      INSERT INTO perfumes (name, brand, gender, release_year, rating, top_notes, middle_notes, base_notes, description, country, image_url, volume_ml, price_byn)
-      VALUES (?, ?, ?, ?, ?, JSON_ARRAY(), JSON_ARRAY(), JSON_ARRAY(), ?, ?, ?, ?, ?)
+      INSERT INTO perfumes (
+        name, brand, gender, release_year, rating, top_notes, middle_notes, base_notes,
+        description, country, image_url, image_data, image_mime, volume_ml, price_byn
+      )
+      VALUES (?, ?, ?, ?, ?, JSON_ARRAY(), JSON_ARRAY(), JSON_ARRAY(), ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         String(name).trim(),
@@ -680,8 +741,11 @@ app.post("/api/perfumes", requireAdmin, async (req, res) => {
         ["female", "male", "unisex"].includes(gender) ? gender : "unisex",
         Number(releaseYear) || new Date().getFullYear(),
         0,
-        "Не указано",
-        String(imageUrl || "").trim(),
+        String(description || "").trim(),
+        String(country || "Не указано").trim(),
+        image ? "" : String(imageUrl || "").trim(),
+        image?.buffer || null,
+        image?.mime || null,
         Number(volumeMl) || 100,
         Number(priceByn) || 0
       ]
@@ -719,6 +783,10 @@ app.patch("/api/perfumes/:id", requireAdmin, async (req, res) => {
       priceByn: Number(req.body.priceByn) || 0,
       country: String(req.body.country ?? current.country).trim()
     };
+    const image = parseImageDataUrl(req.body.imageDataUrl);
+    if (req.body.imageDataUrl && !image) {
+      return res.status(400).json({ success: false, message: "invalid_image" });
+    }
 
     if (!next.name || !next.brand) {
       return res.status(400).json({ success: false, message: "name_and_brand_required" });
@@ -727,10 +795,25 @@ app.patch("/api/perfumes/:id", requireAdmin, async (req, res) => {
     await db.execute(
       `
       UPDATE perfumes
-      SET name = ?, brand = ?, gender = ?, release_year = ?, description = ?, image_url = ?, volume_ml = ?, price_byn = ?, country = ?
+      SET name = ?, brand = ?, gender = ?, release_year = ?, description = ?,
+          image_url = ?, image_data = COALESCE(?, image_data), image_mime = COALESCE(?, image_mime),
+          volume_ml = ?, price_byn = ?, country = ?
       WHERE id = ?
       `,
-      [next.name, next.brand, next.gender, next.releaseYear, next.description, next.imageUrl, next.volumeMl, next.priceByn, next.country, id]
+      [
+        next.name,
+        next.brand,
+        next.gender,
+        next.releaseYear,
+        next.description,
+        image || next.imageUrl.startsWith("data:") ? "" : next.imageUrl,
+        image?.buffer || null,
+        image?.mime || null,
+        next.volumeMl,
+        next.priceByn,
+        next.country,
+        id
+      ]
     );
 
     const [updatedRows] = await db.execute("SELECT * FROM perfumes WHERE id = ? LIMIT 1", [id]);
@@ -854,7 +937,8 @@ app.post("/api/auth/register", async (req, res) => {
     const rawName = String(req.body.name || req.body.login || "").trim();
     const password = String(req.body.password || "");
     const phone = req.body.phone ? String(req.body.phone).trim() : null;
-    const recoveryKeyword = String(req.body.recoveryKeyword || "").trim();
+    const recoveryQuestion = String(req.body.recoveryQuestion || "").trim();
+    const recoveryAnswer = String(req.body.recoveryAnswer || req.body.recoveryKeyword || "").trim();
 
     if (!rawEmail || !rawName || !password) {
       return res.status(400).json({ success: false, message: "email_name_and_password_required" });
@@ -862,8 +946,8 @@ app.post("/api/auth/register", async (req, res) => {
     if (!isLikelyEmail(rawEmail)) {
       return res.status(400).json({ success: false, message: "invalid_email" });
     }
-    if (!recoveryKeyword) {
-      return res.status(400).json({ success: false, message: "recovery_keyword_required" });
+    if (!recoveryQuestion || !recoveryAnswer) {
+      return res.status(400).json({ success: false, message: "recovery_question_and_answer_required" });
     }
     if (password.length < 6) {
       return res.status(400).json({ success: false, message: "password_too_short" });
@@ -879,13 +963,17 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const recoveryAnswerHash = await bcrypt.hash(recoveryAnswer, 10);
 
     const [result] = await db.execute(
       `
-      INSERT INTO users (email, password_hash, name, login, password, phone, role, recovery_keyword, favorites)
-      VALUES (?, ?, ?, ?, ?, ?, 'user', ?, JSON_ARRAY())
+      INSERT INTO users (
+        email, password_hash, name, login, password, phone, role,
+        recovery_keyword, recovery_question, recovery_answer_hash, favorites
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 'user', ?, ?, ?, JSON_ARRAY())
       `,
-      [rawEmail, passwordHash, rawName, rawName, passwordHash, phone || null, recoveryKeyword]
+      [rawEmail, passwordHash, rawName, rawName, passwordHash, phone || null, null, recoveryQuestion, recoveryAnswerHash]
     );
 
     req.session.user = {
@@ -899,6 +987,37 @@ app.post("/api/auth/register", async (req, res) => {
     return res.status(201).json({ success: true, userId: result.insertId, redirect: "/#/profile" });
   } catch (error) {
     console.error("Register error:", error);
+    return res.status(500).json({ success: false, message: "internal_server_error" });
+  }
+});
+
+app.get("/api/auth/recovery-question", async (req, res) => {
+  try {
+    const identity = String(req.query.identity || req.query.email || req.query.login || "").trim();
+    if (!identity) {
+      return res.status(400).json({ success: false, message: "identity_required" });
+    }
+
+    const [rows] = await db.execute(
+      `
+      SELECT recovery_question
+      FROM users
+      WHERE email = ? OR login = ? OR name = ?
+      LIMIT 1
+      `,
+      [identity.toLowerCase(), identity, identity]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: "user_not_found" });
+    }
+
+    return res.json({
+      success: true,
+      question: rows[0].recovery_question || "Введите ответ на вопрос восстановления"
+    });
+  } catch (error) {
+    console.error("Recovery question error:", error);
     return res.status(500).json({ success: false, message: "internal_server_error" });
   }
 });
@@ -954,11 +1073,11 @@ app.post("/api/auth/login", async (req, res) => {
 app.post("/api/auth/reset-password", async (req, res) => {
   try {
     const identity = String(req.body.email || req.body.login || "").trim();
-    const recoveryKeyword = String(req.body.recoveryKeyword || "").trim();
+    const recoveryAnswer = String(req.body.recoveryAnswer || req.body.recoveryKeyword || "").trim();
     const newPassword = String(req.body.newPassword || "");
 
-    if (!identity || !recoveryKeyword || !newPassword) {
-      return res.status(400).json({ success: false, message: "login_keyword_and_password_required" });
+    if (!identity || !recoveryAnswer || !newPassword) {
+      return res.status(400).json({ success: false, message: "login_answer_and_password_required" });
     }
     if (newPassword.length < 6) {
       return res.status(400).json({ success: false, message: "password_too_short" });
@@ -966,20 +1085,27 @@ app.post("/api/auth/reset-password", async (req, res) => {
 
     const [rows] = await db.execute(
       `
-      SELECT id
+      SELECT id, recovery_keyword, recovery_answer_hash
       FROM users
-      WHERE (email = ? OR login = ? OR name = ?) AND recovery_keyword = ?
+      WHERE email = ? OR login = ? OR name = ?
       LIMIT 1
       `,
-      [identity.toLowerCase(), identity, identity, recoveryKeyword]
+      [identity.toLowerCase(), identity, identity]
     );
 
     if (rows.length === 0) {
       return res.status(401).json({ success: false, message: "invalid_recovery_data" });
     }
+    const user = rows[0];
+    const answerOk = user.recovery_answer_hash
+      ? await bcrypt.compare(recoveryAnswer, user.recovery_answer_hash)
+      : recoveryAnswer === user.recovery_keyword;
+    if (!answerOk) {
+      return res.status(401).json({ success: false, message: "invalid_recovery_data" });
+    }
 
     const newHash = await bcrypt.hash(newPassword, 10);
-    await db.execute("UPDATE users SET password_hash = ?, password = ? WHERE id = ?", [newHash, newHash, rows[0].id]);
+    await db.execute("UPDATE users SET password_hash = ?, password = ? WHERE id = ?", [newHash, newHash, user.id]);
 
     return res.json({ success: true });
   } catch (error) {
@@ -1039,7 +1165,7 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
 app.get("/api/auth/profile", requireAuth, async (req, res) => {
   try {
     const [rows] = await db.execute(
-      "SELECT id, email, name, login, phone, role, recovery_keyword FROM users WHERE id = ? LIMIT 1",
+      "SELECT id, email, name, login, phone, role, recovery_keyword, recovery_question FROM users WHERE id = ? LIMIT 1",
       [req.session.user.id]
     );
 
@@ -1056,6 +1182,7 @@ app.get("/api/auth/profile", requireAuth, async (req, res) => {
         login: rows[0].name || rows[0].login || "",
         phone: rows[0].phone,
         role: rows[0].role,
+        recoveryQuestion: rows[0].recovery_question || "",
         recoveryKeyword: rows[0].recovery_keyword || ""
       }
     });
@@ -1067,12 +1194,21 @@ app.get("/api/auth/profile", requireAuth, async (req, res) => {
 
 app.patch("/api/auth/profile", requireAuth, async (req, res) => {
   try {
-    const recoveryKeyword = String(req.body.recoveryKeyword || "").trim();
-    if (!recoveryKeyword) {
-      return res.status(400).json({ success: false, message: "recovery_keyword_required" });
+    const recoveryQuestion = String(req.body.recoveryQuestion || "").trim();
+    const recoveryAnswer = String(req.body.recoveryAnswer || req.body.recoveryKeyword || "").trim();
+    if (!recoveryQuestion) {
+      return res.status(400).json({ success: false, message: "recovery_question_required" });
     }
 
-    await db.execute("UPDATE users SET recovery_keyword = ? WHERE id = ?", [recoveryKeyword, req.session.user.id]);
+    if (recoveryAnswer) {
+      const recoveryAnswerHash = await bcrypt.hash(recoveryAnswer, 10);
+      await db.execute(
+        "UPDATE users SET recovery_question = ?, recovery_keyword = ?, recovery_answer_hash = ? WHERE id = ?",
+        [recoveryQuestion, null, recoveryAnswerHash, req.session.user.id]
+      );
+    } else {
+      await db.execute("UPDATE users SET recovery_question = ? WHERE id = ?", [recoveryQuestion, req.session.user.id]);
+    }
     return res.json({ success: true });
   } catch (error) {
     console.error("Profile update error:", error);
@@ -1091,6 +1227,7 @@ app.use((err, _req, res, _next) => {
     await ensureAdminUser();
     await seedPerfumesIfEmpty();
     await seedReviewsIfEmpty();
+    await backfillPerfumeImagesFromFiles();
     await db.query("SELECT 1");
 
     console.log("Успешное подключение к MySQL");
