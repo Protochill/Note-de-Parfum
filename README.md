@@ -11,7 +11,7 @@
 - Пользователи, ведущие цифровой дневник своих парфюмерных открытий
 
 **Ключевой функционал:**
-- Просмотр каталога парфюмерии с фильтрацией по брендам, нотам, годам выпуска и половой принадлежности
+- Просмотр каталога парфюмерии с фильтрацией по брендам, годам выпуска и половой принадлежности
 - Детальные карточки товаров с описанием пирамиды нот, характеристиками и отзывами
 - Регистрация, аутентификация и восстановление пароля
 - Личный кабинет пользователя с возможностью добавлять ароматы в избранное и писать отзывы
@@ -155,7 +155,6 @@ MySQL оптимально подходит для хранения четких
 
 2. **Сайдбар:**
    - Бренды
-   - Ноты
    - Пол
    - Год выпуска
 
@@ -177,8 +176,7 @@ MySQL оптимально подходит для хранения четких
 6. **Футер**
 
 **Динамический контент:**
-- `GET /api/perfumes`
-- `GET /api/perfumes/search?q=...`
+- `GET /api/perfumes?q=...&brand=...&gender=...&year=...&sort=...`
 
 ---
 
@@ -195,9 +193,8 @@ MySQL оптимально подходит для хранения четких
 5. Рекомендации
 
 **Динамический контент:**
-- `GET /api/perfumes/:id`
-- `GET /api/perfumes/:id/reviews`
-- `GET /api/perfumes/:id/recommendations`
+- `GET /api/perfumes?q=...`
+- `GET /api/reviews?perfumeId=...`
 
 ---
 
@@ -243,8 +240,8 @@ MySQL оптимально подходит для хранения четких
 5. Футер
 
 **Динамика:**
-- `GET /api/profile`
-- `PUT /api/profile`
+- `GET /api/auth/profile`
+- `PATCH /api/auth/profile`
 
 ---
 
@@ -267,7 +264,7 @@ MySQL оптимально подходит для хранения четких
 
 **Динамика:**
 - `GET /api/favorites`
-- `DELETE /api/favorites/:id`
+- `POST /api/favorites/:perfumeId/toggle`
 
 ---
 
@@ -285,7 +282,9 @@ MySQL оптимально подходит для хранения четких
 6. Футер
 
 **Динамика:**
-- `/api/admin/*`
+- `POST /api/perfumes`
+- `PATCH /api/perfumes/:id`
+- `DELETE /api/perfumes/:id`
 
 ---
 
@@ -319,26 +318,26 @@ MySQL оптимально подходит для хранения четких
 | id | INT, PK, AUTO_INCREMENT | Уникальный идентификатор аромата |
 | name | VARCHAR | Название аромата |
 | brand | VARCHAR | Название бренда |
-| brand_country | VARCHAR | Страна бренда |
-| brand_description | TEXT | Описание бренда |
-| brand_logo_url | VARCHAR | Логотип бренда |
-| brand_founded_year | INT | Год основания |
+| gender | ENUM('female', 'male', 'unisex') | Половая принадлежность |
 | release_year | INT | Год выпуска аромата |
-| gender | ENUM('male', 'female', 'unisex') | Половая принадлежность |
-| description | TEXT | Описание аромата |
-| image_url | VARCHAR | Изображение флакона |
+| rating | DECIMAL(3,2) | Рейтинг аромата |
 | top_notes | JSON | Массив верхних нот |
 | middle_notes | JSON | Массив нот сердца |
 | base_notes | JSON | Массив базовых нот |
-| average_rating | DECIMAL(2,1) | Средняя оценка |
+| description | TEXT | Описание аромата |
+| country | VARCHAR | Страна |
+| image_url | TEXT | Ссылка на изображение |
+| image_data | LONGBLOB | Двоичные данные изображения |
+| image_mime | VARCHAR(100) | MIME-тип изображения |
+| volume_ml | INT | Объём флакона в миллилитрах |
+| price_byn | DECIMAL(10,2) | Цена в BYN |
 | created_at | TIMESTAMP | Дата добавления |
 | updated_at | TIMESTAMP | Дата обновления |
 
 **Особенности модели:**
-- Информация о бренде хранится прямо в таблице ароматов (без отдельной таблицы brands)
-- Допустимо дублирование данных бренда для разных ароматов
-- Ноты хранятся в JSON для гибкости
-- average_rating обновляется автоматически при изменении отзывов
+- Информация о бренде хранится только в поле `brand`
+- Ноты хранятся в JSON-полях
+- Оценка хранится в поле `rating`
 
 ---
 
@@ -347,18 +346,16 @@ MySQL оптимально подходит для хранения четких
 | Поле | Тип | Описание |
 |:---|:---|:---|
 | id | INT, PK, AUTO_INCREMENT | Уникальный идентификатор отзыва |
-| user_id | INT, FOREIGN KEY | ID пользователя |
-| perfume_id | INT, FOREIGN KEY | ID аромата |
-| user_login | VARCHAR | Логин пользователя (денормализация) |
+| perfume_id | INT | ID аромата |
+| user_id | INT | ID пользователя |
+| user_login | VARCHAR | Логин пользователя (для отображения) |
 | rating | TINYINT | Оценка (1-5) |
 | text | TEXT | Текст отзыва |
-| created_at | TIMESTAMP | Дата написания |
-| updated_at | TIMESTAMP | Дата редактирования |
+| created_at | DATE | Дата написания |
 
 **Особенности модели:**
-- Составной уникальный ключ (user_id, perfume_id) — один отзыв на аромат от пользователя
-- Денормализация user_login для быстрого отображения без JOIN
-- При изменении логина пользователя обновляются все его отзывы
+- Нет строгого уникального ограничения `(user_id, perfume_id)`
+- Отзывы создаются через `POST /api/reviews`
 
 ---
 
@@ -368,7 +365,7 @@ MySQL оптимально подходит для хранения четких
 
 | Метод | Эндпоинт | Описание | Тело запроса | Ответ |
 |:---|:---|:---|:---|:---|
-| POST | `/api/auth/register` | Регистрация | `{ login, password, phone }` | `{ success, userId }` |
+| POST | `/api/auth/register` | Регистрация | `{ email, password, name, phone, recoveryQuestion, recoveryKeyword }` | `{ success, userId }` |
 | POST | `/api/auth/login` | Вход | `{ login, password }` | `{ success, redirect }` |
 | POST | `/api/auth/logout` | Выход | — | `{ success }` |
 | GET | `/api/auth/check` | Проверка сессии | — | `{ authenticated, user }` |
@@ -379,10 +376,7 @@ MySQL оптимально подходит для хранения четких
 
 | Метод | Эндпоинт | Описание | Параметры | Ответ |
 |:---|:---|:---|:---|:---|
-| GET | `/api/perfumes` | Список ароматов | `brand`, `note`, `gender`, `sort`, `page` | Массив ароматов с пагинацией |
-| GET | `/api/perfumes/:id` | Детальная информация | — | Полный объект аромата |
-| GET | `/api/perfumes/search` | Поиск | `q` (запрос) | Массив найденных ароматов |
-| GET | `/api/perfumes/:id/reviews` | Отзывы к аромату | `page` | Массив отзывов |
+| GET | `/api/perfumes` | Список ароматов | `q`, `brand`, `gender`, `year`, `sort` | Массив ароматов |
 
 ---
 
@@ -390,9 +384,8 @@ MySQL оптимально подходит для хранения четких
 
 | Метод | Эндпоинт | Описание | Ответ |
 |:---|:---|:---|:---|
-| GET | `/api/favorites` | Список избранного | Массив ароматов |
-| POST | `/api/favorites/:perfumeId` | Добавить в избранное | `{ success }` |
-| DELETE | `/api/favorites/:perfumeId` | Удалить из избранного | `{ success }` |
+| GET | `/api/favorites` | Список избранного | Массив ID избранных ароматов |
+| POST | `/api/favorites/:perfumeId/toggle` | Добавить/убрать из избранного | `{ success, favoriteIds }` |
 
 ---
 
@@ -410,8 +403,8 @@ MySQL оптимально подходит для хранения четких
 
 | Метод | Эндпоинт | Описание | Тело запроса |
 |:---|:---|:---|:---|
-| GET | `/api/profile` | Данные профиля | — |
-| PUT | `/api/profile` | Обновить профиль | `{ login, phone }` |
+| GET | `/api/auth/profile` | Данные профиля | — |
+| PATCH | `/api/auth/profile` | Обновить профиль | `{ recoveryQuestion, recoveryAnswer }` |
 
 ---
 
@@ -419,8 +412,6 @@ MySQL оптимально подходит для хранения четких
 
 | Метод | Эндпоинт | Описание | Тело запроса |
 |:---|:---|:---|:---|
-| POST | `/api/admin/perfumes` | Добавить аромат | Полный объект аромата |
-| PUT | `/api/admin/perfumes/:id` | Обновить аромат | Обновляемые поля |
-| DELETE | `/api/admin/perfumes/:id` | Удалить аромат | — |
-| GET | `/api/admin/users` | Список пользователей | — |
-| DELETE | `/api/admin/users/:id` | Удалить пользователя | — |
+| POST | `/api/perfumes` | Добавить аромат | Полный объект аромата |
+| PATCH | `/api/perfumes/:id` | Обновить аромат | Обновляемые поля |
+| DELETE | `/api/perfumes/:id` | Удалить аромат | — |
