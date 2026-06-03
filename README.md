@@ -449,3 +449,91 @@ MySQL оптимально подходит для хранения четких
 | POST | `/api/perfumes` | Добавить аромат | Полный объект аромата |
 | PATCH | `/api/perfumes/:id` | Обновить аромат | Обновляемые поля |
 | DELETE | `/api/perfumes/:id` | Удалить аромат | — |
+
+---
+
+## Note de Parfum — Инструкция по установке
+
+Ниже описаны шаги для локальной настройки и запуска проекта на машине разработчика.
+
+**Требования**
+- Node.js (рекомендуется версия 16+)
+- npm (идёт в комплекте с Node.js)
+- MySQL сервер (или MariaDB)
+
+**1. Клонирование репозитория**
+
+Склонируйте репозиторий и перейдите в папку проекта:
+
+```
+git clone <repo-url>
+cd Note-de-Parfum
+```
+
+**2. Установка зависимостей**
+
+Установите npm-зависимости:
+
+```bash
+npm install
+```
+
+В `package.json` есть скрипт запуска:
+
+```bash
+npm start
+# или
+node server.js
+```
+
+**3. Переменные окружения (.env)**
+
+Создайте файл `.env` в корне проекта или используйте `.env.example` (если добавите).
+Пример необходимых переменных окружения:
+
+```
+PORT=3000
+DB_HOST=localhost
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=note_de_parfum
+SESSION_SECRET=change_this_to_a_random_string
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=you@example.com
+SMTP_PASS=your_smtp_password
+```
+
+Примечание: сервер использует MySQL. Создайте базу данных и пользователя заранее:
+
+```sql
+CREATE DATABASE note_de_parfum CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'your_db_user'@'localhost' IDENTIFIED BY 'your_db_password';
+GRANT ALL ON note_de_parfum.* TO 'your_db_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+**4. Запуск проекта**
+
+После настройки `.env` и базы данных запустите сервер:
+
+```bash
+npm start
+```
+
+Откройте в браузере: `http://localhost:3000` (или порт из `PORT`).
+
+**5. Тестирование и отладка**
+- Логи сервера выводятся в консоль.
+- Для изменений фронтенда достаточно обновить файл в `scripts/` и перезагрузить страницу.
+
+**6. Частые проблемы**
+- Ошибка подключения к БД: проверьте `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
+- Ошибка сессий: установите `SESSION_SECRET` и перезапустите сервер.
+- Почта не отправляется: проверьте настройки SMTP.
+
+**7. Полезные команды**
+- Установить зависимости: `npm install`
+- Запустить сервер: `npm start`
+- Запустить сервер напрямую: `node server.js`
+
