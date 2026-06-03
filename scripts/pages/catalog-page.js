@@ -1,5 +1,5 @@
 ﻿import { el, stars } from "../dom.js";
-import { getState, listPerfumes, refreshPerfumes, toggleFavorite, addToCart } from "../state.js";
+import { getState, listPerfumes, refreshPerfumes, toggleFavorite, addToCart, removeFromCart, updateCartItem, getCartItemQuantity } from "../state.js";
 import { createPerfumeMedia } from "../ui/perfume-media.js";
 import { refreshHeaderCounters } from "../layout.js";
 
@@ -84,13 +84,59 @@ export function renderCatalogPage({ query, go }) {
           el("p", {}, p.description),
           el("div", { class: "actions-row" }, [
             el("button", { class: "button button--primary", onclick: () => go(`/catalog/${p.id}`) }, "Подробнее"),
-            !isGuest ? el("button", {
-              class: "button button--secondary",
-              onclick: () => {
-                addToCart(p.id);
-                refreshHeaderCounters();
+            !isGuest ? (() => {
+              const cartQty = getCartItemQuantity(p.id);
+              const cartControls = el("div", { class: "cart-counter" });
+              
+              const showCounter = () => {
+                const qty = getCartItemQuantity(p.id);
+                cartControls.replaceChildren(
+                  el("button", {
+                    class: "button button--secondary cart-btn-minus",
+                    onclick: () => {
+                      const newQty = qty - 1;
+                      if (newQty === 0) {
+                        removeFromCart(p.id);
+                        showAddButton();
+                      } else {
+                        updateCartItem(p.id, newQty);
+                        showCounter();
+                      }
+                      refreshHeaderCounters();
+                    }
+                  }, "−"),
+                  el("span", { class: "cart-counter__value" }, String(qty)),
+                  el("button", {
+                    class: "button button--secondary",
+                    onclick: () => {
+                      addToCart(p.id);
+                      showCounter();
+                      refreshHeaderCounters();
+                    }
+                  }, "+")
+                );
+              };
+              
+              const showAddButton = () => {
+                cartControls.replaceChildren(
+                  el("button", {
+                    class: "button button--secondary",
+                    onclick: () => {
+                      addToCart(p.id);
+                      showCounter();
+                      refreshHeaderCounters();
+                    }
+                  }, "В корзину")
+                );
+              };
+              
+              if (cartQty === 0) {
+                showAddButton();
+              } else {
+                showCounter();
               }
-            }, "В корзину") : null,
+              return cartControls;
+            })() : null,
             favButton
           ])
         ])

@@ -390,6 +390,16 @@ function isLikelyEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
+function isStrongPassword(password) {
+  return (
+    typeof password === "string" &&
+    password.length >= 8 &&
+    /[A-Z]/.test(password) &&
+    /[a-z]/.test(password) &&
+    /[^A-Za-z0-9]/.test(password)
+  );
+}
+
 function normalizeUserRow(row) {
   const name = String(row.name || row.login || "").trim();
   const email = String(row.email || "").trim();
@@ -949,8 +959,8 @@ app.post("/api/auth/register", async (req, res) => {
     if (!recoveryQuestion || !recoveryAnswer) {
       return res.status(400).json({ success: false, message: "recovery_question_and_answer_required" });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ success: false, message: "password_too_short" });
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ success: false, message: "password_too_weak" });
     }
 
     const [existing] = await db.execute(
@@ -1079,8 +1089,8 @@ app.post("/api/auth/reset-password", async (req, res) => {
     if (!identity || !recoveryAnswer || !newPassword) {
       return res.status(400).json({ success: false, message: "login_answer_and_password_required" });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ success: false, message: "password_too_short" });
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({ success: false, message: "password_too_weak" });
     }
 
     const [rows] = await db.execute(

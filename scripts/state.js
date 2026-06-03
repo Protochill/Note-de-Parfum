@@ -552,6 +552,10 @@ export function clearCart() {
   saveCart();
 }
 
+export function getCartItemQuantity(perfumeId) {
+  return state.cart.get(Number(perfumeId)) || 0;
+}
+
 export function listCartItems() {
   return [...state.cart.entries()]
     .map(([id, quantity]) => {

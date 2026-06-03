@@ -1,6 +1,16 @@
 ﻿import { el } from "../dom.js";
 import { apiRequest, refreshAuthState } from "../state.js";
 
+function isStrongPassword(password) {
+  return (
+    typeof password === "string" &&
+    password.length >= 8 &&
+    /[A-Z]/.test(password) &&
+    /[a-z]/.test(password) &&
+    /[^A-Za-z0-9]/.test(password)
+  );
+}
+
 export function renderAuthPage({ path, go }) {
   const mode = path.split("/").pop();
 
@@ -46,7 +56,7 @@ export function renderAuthPage({ path, go }) {
       } catch (error) {
         const map = {
           login_answer_and_password_required: "Заполните логин, ответ и новый пароль.",
-          password_too_short: "Минимальная длина нового пароля: 6 символов.",
+          password_too_weak: "Пароль должен быть минимум 8 символов, содержать одну заглавную, одну строчную букву и один спецсимвол.",
           invalid_recovery_data: "Неверный логин или ответ."
         };
         status.textContent = map[error.message] || "Не удалось восстановить пароль.";
@@ -103,8 +113,8 @@ export function renderAuthPage({ path, go }) {
         status.textContent = "Введите корректный email.";
         return;
       }
-      if (password.length < 6) {
-        status.textContent = "Минимальная длина пароля: 6 символов.";
+      if (!isStrongPassword(password)) {
+        status.textContent = "Пароль должен быть минимум 8 символов, содержать одну заглавную, одну строчную букву и один спецсимвол.";
         return;
       }
       if (isRegister && (!recoveryQuestion || !recoveryAnswer)) {
@@ -134,7 +144,7 @@ export function renderAuthPage({ path, go }) {
         login_and_password_required: "Логин и пароль обязательны.",
         email_name_and_password_required: "Имя, email и пароль обязательны.",
         invalid_email: "Введите корректный email.",
-        password_too_short: "Минимальная длина пароля: 6 символов.",
+        password_too_weak: "Пароль должен быть минимум 8 символов, содержать одну заглавную, одну строчную букву и один спецсимвол.",
         login_or_phone_already_exists: "Такой логин или телефон уже заняты.",
         email_or_phone_already_exists: "Такой email или телефон уже заняты.",
         recovery_question_and_answer_required: "Вопрос и ответ обязательны для регистрации.",
